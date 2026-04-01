@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1f3a" />
+  <meta name="description" content="Sistema de asistencia escolar - CEM N°83" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CEM 83" />
+  <title>CEM N°83 — Asistencia</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" href="icons/icon-192.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <div class="brand-emblem">83</div>
+        <div class="brand-text">
+          <span class="brand-title">CEM N°83</span>
+          <span class="brand-sub">Sistema de Asistencia</span>
+        </div>
+      </div>
+      <nav class="header-nav">
+        <button class="nav-btn active" data-view="tomar">📋 Tomar</button>
+        <button class="nav-btn" data-view="historial">📅 Historial</button>
+        <button class="nav-btn" data-view="cursos">🏫 Cursos</button>
+        <button class="nav-btn" data-view="exportar">📤 Exportar</button>
+      </nav>
+      <button class="menu-toggle" id="menuToggle" aria-label="Menú">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== MOBILE NAV ===== -->
+  <div class="mobile-nav" id="mobileNav">
+    <button class="nav-btn-mobile active" data-view="tomar">📋 Tomar Asistencia</button>
+    <button class="nav-btn-mobile" data-view="historial">📅 Historial</button>
+    <button class="nav-btn-mobile" data-view="cursos">🏫 Gestión de Cursos</button>
+    <button class="nav-btn-mobile" data-view="exportar">📤 Exportar Informe</button>
+  </div>
+
+  <!-- ===== MAIN ===== -->
+  <main class="app-main">
+
+    <!-- === VISTA: TOMAR ASISTENCIA === -->
+    <section class="view active" id="view-tomar">
+      <div class="view-header">
+        <h1 class="view-title">Tomar Asistencia</h1>
+        <p class="view-sub">Registrá la asistencia diaria del curso</p>
+      </div>
+
+      <div class="selector-grid">
+        <div class="field-group">
+          <label class="field-label">Módulo</label>
+          <select class="field-select" id="sel-modulo">
+            <option value="">— Seleccionar —</option>
+            <option value="1">Módulo 1</option>
+            <option value="2">Módulo 2</option>
+            <option value="3">Módulo 3</option>
+            <option value="4">Módulo 4</option>
+            <option value="5">Módulo 5</option>
+            <option value="6">Módulo 6</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Curso</label>
+          <select class="field-select" id="sel-curso">
+            <option value="">— Primero seleccioná módulo —</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Fecha</label>
+          <input type="date" class="field-select" id="sel-fecha" />
+        </div>
+        <div class="field-group full-width">
+          <button class="btn-primary" id="btn-cargar-lista">Cargar Lista de Estudiantes</button>
+        </div>
+      </div>
+
+      <div class="attendance-panel" id="attendance-panel" style="display:none">
+        <div class="panel-header">
+          <div class="panel-info">
+            <span id="panel-titulo" class="panel-titulo"></span>
+            <span id="panel-fecha" class="panel-fecha"></span>
+          </div>
+          <div class="panel-actions">
+            <button class="btn-sm btn-all-present" id="btn-all-present">✅ Todos Presentes</button>
+            <button class="btn-sm btn-save" id="btn-guardar">💾 Guardar</button>
+          </div>
+        </div>
+
+        <div class="attendance-legend">
+          <span class="legend-item present">P = Presente</span>
+          <span class="legend-item absent">A = Ausente</span>
+          <span class="legend-item late">T = Tarde</span>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="attendance-table" id="attendance-table">
+            <thead>
+              <tr>
+                <th class="th-num">#</th>
+                <th class="th-name">Apellido y Nombre</th>
+                <th class="th-status">Presente</th>
+                <th class="th-status">Ausente</th>
+                <th class="th-status">Tarde</th>
+                <th class="th-obs">Obs.</th>
+              </tr>
+            </thead>
+            <tbody id="attendance-body">
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel-footer">
+          <div class="stats-bar" id="stats-bar">
+            <span class="stat present" id="stat-present">Presentes: 0</span>
+            <span class="stat absent" id="stat-absent">Ausentes: 0</span>
+            <span class="stat late" id="stat-late">Tardanzas: 0</span>
+          </div>
+          <button class="btn-primary" id="btn-guardar-2">💾 Guardar Asistencia</button>
+        </div>
+      </div>
+
+      <div class="empty-state" id="empty-state-tomar">
+        <div class="empty-icon">📋</div>
+        <p>Seleccioná el módulo, curso y fecha para comenzar a registrar asistencia.</p>
+        <p class="empty-hint">Si no hay cursos disponibles, primero creá uno en <strong>Gestión de Cursos</strong>.</p>
+      </div>
+    </section>
+
+    <!-- === VISTA: HISTORIAL === -->
+    <section class="view" id="view-historial">
+      <div class="view-header">
+        <h1 class="view-title">Historial de Asistencias</h1>
+        <p class="view-sub">Consultá los registros anteriores</p>
+      </div>
+
+      <div class="selector-grid">
+        <div class="field-group">
+          <label class="field-label">Módulo</label>
+          <select class="field-select" id="his-modulo">
+            <option value="">Todos</option>
+            <option value="1">Módulo 1</option>
+            <option value="2">Módulo 2</option>
+            <option value="3">Módulo 3</option>
+            <option value="4">Módulo 4</option>
+            <option value="5">Módulo 5</option>
+            <option value="6">Módulo 6</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Curso</label>
+          <select class="field-select" id="his-curso">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Desde</label>
+          <input type="date" class="field-select" id="his-desde" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Hasta</label>
+          <input type="date" class="field-select" id="his-hasta" />
+        </div>
+        <div class="field-group full-width">
+          <button class="btn-primary" id="btn-filtrar-his">🔍 Filtrar</button>
+        </div>
+      </div>
+
+      <div id="historial-resultados"></div>
+    </section>
+
+    <!-- === VISTA: CURSOS === -->
+    <section class="view" id="view-cursos">
+      <div class="view-header">
+        <h1 class="view-title">Gestión de Cursos</h1>
+        <p class="view-sub">Configurá los cursos y estudiantes</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">➕ Crear Nuevo Curso</h2>
+        <div class="selector-grid">
+          <div class="field-group">
+            <label class="field-label">Módulo</label>
+            <select class="field-select" id="cur-modulo">
+              <option value="1">Módulo 1</option>
+              <option value="2">Módulo 2</option>
+              <option value="3">Módulo 3</option>
+              <option value="4">Módulo 4</option>
+              <option value="5">Módulo 5</option>
+              <option value="6">Módulo 6</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Año</label>
+            <select class="field-select" id="cur-anio">
+              <option value="1°">1°</option>
+              <option value="2°">2°</option>
+              <option value="3°">3°</option>
+              <option value="4°">4°</option>
+              <option value="5°">5°</option>
+              <option value="6°">6°</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">División</label>
+            <select class="field-select" id="cur-division">
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="E">E</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Materia / Descripción (opcional)</label>
+            <input type="text" class="field-select" id="cur-materia" placeholder="Ej: Matemática" />
+          </div>
+          <div class="field-group full-width">
+            <button class="btn-primary" id="btn-crear-curso">Crear Curso</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="card-cursos-list">
+        <h2 class="card-title">📚 Cursos Creados</h2>
+        <div id="cursos-list"></div>
+      </div>
+
+      <!-- Panel agregar estudiantes -->
+      <div class="card" id="card-estudiantes" style="display:none">
+        <h2 class="card-title">👤 Agregar Estudiantes a: <span id="cur-selected-name"></span></h2>
+        <div class="selector-grid">
+          <div class="field-group">
+            <label class="field-label">Apellido</label>
+            <input type="text" class="field-select" id="stu-apellido" placeholder="Ej: García" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Nombre</label>
+            <input type="text" class="field-select" id="stu-nombre" placeholder="Ej: Juan" />
+          </div>
+          <div class="field-group full-width">
+            <button class="btn-primary" id="btn-agregar-stu">Agregar Estudiante</button>
+          </div>
+        </div>
+        <div id="stu-list-container" class="stu-list-container"></div>
+        <div class="card-actions">
+          <button class="btn-secondary" id="btn-import-txt">📄 Importar desde texto</button>
+        </div>
+        <!-- Modal importar -->
+        <div class="import-modal" id="import-modal" style="display:none">
+          <p class="import-hint">Pegá la lista de estudiantes (un estudiante por línea, formato: <strong>Apellido, Nombre</strong> o <strong>Apellido Nombre</strong>)</p>
+          <textarea id="import-textarea" class="import-textarea" rows="10" placeholder="García, Juan&#10;López, María&#10;Pérez, Carlos"></textarea>
+          <div class="import-actions">
+            <button class="btn-primary" id="btn-import-confirm">Importar</button>
+            <button class="btn-secondary" id="btn-import-cancel">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- === VISTA: EXPORTAR === -->
+    <section class="view" id="view-exportar">
+      <div class="view-header">
+        <h1 class="view-title">Exportar Informe</h1>
+        <p class="view-sub">Generá reportes en CSV o imprimibles</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">⚙️ Configurar Informe</h2>
+        <div class="selector-grid">
+          <div class="field-group">
+            <label class="field-label">Módulo</label>
+            <select class="field-select" id="exp-modulo">
+              <option value="">Todos</option>
+              <option value="1">Módulo 1</option>
+              <option value="2">Módulo 2</option>
+              <option value="3">Módulo 3</option>
+              <option value="4">Módulo 4</option>
+              <option value="5">Módulo 5</option>
+              <option value="6">Módulo 6</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Curso</label>
+            <select class="field-select" id="exp-curso">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Desde</label>
+            <input type="date" class="field-select" id="exp-desde" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Hasta</label>
+            <input type="date" class="field-select" id="exp-hasta" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Tipo de informe</label>
+            <select class="field-select" id="exp-tipo">
+              <option value="detalle">Detalle por día</option>
+              <option value="resumen">Resumen por estudiante</option>
+              <option value="mensual">Planilla mensual</option>
+            </select>
+          </div>
+        </div>
+        <div class="export-btns">
+          <button class="btn-export" id="btn-export-csv">
+            <span class="export-icon">📊</span>
+            <span>Exportar CSV</span>
+          </button>
+          <button class="btn-export" id="btn-export-print">
+            <span class="export-icon">🖨️</span>
+            <span>Imprimir / PDF</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">📈 Resumen General</h2>
+        <div id="resumen-general"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ===== PRINT AREA ===== -->
+  <div id="print-area" class="print-area"></div>
+
+  <script src="js/db.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/export.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('SW registrado'))
+        .catch(err => console.log('SW error:', err));
+    }
+  </script>
+</body>
+</html>
