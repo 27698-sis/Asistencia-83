@@ -1,6 +1,7 @@
 {
   "name": "CEM N°83 — Asistencia",
   "short_name": "CEM 83",
+  "id": "/cem83-asistencia/",
   "description": "Sistema de registro de asistencia escolar para el CEM N°83",
   "start_url": "./index.html",
   "display": "standalone",
@@ -22,10 +23,5 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["education", "productivity"],
-  "screenshots": [
-    {
-      "label": "Pantalla de toma de asistencia"
-    }
-  ]
+  "categories": ["education", "productivity"]
 }
