@@ -3,7 +3,7 @@
  * Soporte offline + caché de assets
  */
 
-const CACHE_NAME = 'cem83-v1.0.0';
+const CACHE_NAME = 'cem83-v1.0.1';
 
 const ASSETS = [
   './',

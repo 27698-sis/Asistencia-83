@@ -83,8 +83,6 @@ function exportarResumen(asistencias) {
     const resumen = DB.getResumenEstudiante(cursoId);
 
     resumen.forEach(r => {
-      const totalDias = asis.length;
-      const pct = totalDias > 0 ? Math.round(((r.presentes + r.tardes) / totalDias) * 100) : 0;
       filas.push([
         `Módulo ${curso.modulo}`,
         curso.nombre,
@@ -94,8 +92,8 @@ function exportarResumen(asistencias) {
         r.presentes,
         r.ausentes,
         r.tardes,
-        totalDias,
-        `${pct}%`
+        r.totalDias,
+        r.pct !== null ? `${r.pct}%` : '0%'
       ]);
     });
     filas.push([]); // separador entre cursos
@@ -120,20 +118,17 @@ function exportarMensual(asistencias, cursoId) {
 
   const asisMap = {};
   asistencias.forEach(a => { asisMap[a.fecha] = a; });
+  const resumen = DB.getResumenEstudiante(cursoId);
 
   curso.estudiantes.forEach((stu, i) => {
-    let p = 0, a = 0, t = 0;
+    const infoStu = resumen.find(r => r.id === stu.id) || { presentes: 0, ausentes: 0, tardes: 0, pct: 0 };
     const estados = fechas.map(fecha => {
       const reg = asisMap[fecha]?.registros.find(r => r.stuId === stu.id);
-      const estado = reg ? reg.estado : '-';
-      if (estado === 'P') p++;
-      else if (estado === 'A') a++;
-      else if (estado === 'T') t++;
-      return estado;
+      return reg ? reg.estado : '-';
     });
-    const total = p + a + t;
-    const pct   = total > 0 ? Math.round(((p + t) / total) * 100) : 0;
-    filas.push([i + 1, stu.apellido, stu.nombre, ...estados, p, a, t, `${pct}%`]);
+
+    const pctLabel = infoStu.pct !== null ? `${infoStu.pct}%` : '0%';
+    filas.push([i + 1, stu.apellido, stu.nombre, ...estados, infoStu.presentes, infoStu.ausentes, infoStu.tardes, pctLabel]);
   });
 
   return filas;
@@ -208,16 +203,16 @@ function buildPrintResumen(asistencias) {
     const curso = DB.getCursoById(cid);
     if (!curso) return;
     const resumen = DB.getResumenEstudiante(cid);
-    const totalDias = asis.length;
+    const totalDias = resumen.length > 0 ? resumen[0].totalDias : 0;
 
     let rows = resumen.map(r => {
-      const pct = totalDias > 0 ? Math.round(((r.presentes + r.tardes) / totalDias) * 100) : 0;
+      const pctLabel = r.pct !== null ? `${r.pct}%` : '0%';
       return `<tr>
         <td>${r.apellido}, ${r.nombre}</td>
         <td style="text-align:center">${r.presentes}</td>
         <td style="text-align:center">${r.ausentes}</td>
         <td style="text-align:center">${r.tardes}</td>
-        <td style="text-align:center">${pct}%</td>
+        <td style="text-align:center">${pctLabel}</td>
       </tr>`;
     }).join('');
 

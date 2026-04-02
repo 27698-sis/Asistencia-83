@@ -174,10 +174,13 @@ const DB = (() => {
   const importAll = (json) => {
     try {
       const data = typeof json === 'string' ? JSON.parse(json) : json;
-      if (data.cursos) save(KEY_CURSOS, data.cursos);
-      if (data.asistencias) save(KEY_ASISTENCIAS, data.asistencias);
-      return true;
-    } catch { return false; }
+      if (data && typeof data === 'object') {
+        if (Array.isArray(data.cursos)) save(KEY_CURSOS, data.cursos);
+        if (Array.isArray(data.asistencias)) save(KEY_ASISTENCIAS, data.asistencias);
+        return true;
+      }
+      return false;
+    } catch (e) { console.error("Error importando datos:", e); return false; }
   };
 
   /* ================================================================
