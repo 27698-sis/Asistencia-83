@@ -251,6 +251,72 @@ body {
   flex-wrap: wrap;
 }
 
+.install-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+  padding: 22px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(232,160,32,.35);
+  background:
+    radial-gradient(circle at top left, rgba(232,160,32,.18), transparent 34%),
+    linear-gradient(135deg, #fffdfa 0%, #fff 48%, #f6f0e7 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.install-card[hidden] {
+  display: none !important;
+}
+
+.install-card-copy {
+  max-width: 720px;
+}
+
+.install-card-kicker {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--amber-dark);
+}
+
+.install-card-title {
+  font-family: var(--font-head);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--navy);
+  margin-bottom: 8px;
+}
+
+.install-card-text {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.install-card-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.install-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 210px;
+}
+
+.install-card-actions .btn-primary,
+.install-card-actions .btn-secondary {
+  width: 100%;
+}
+
 /* ============================================================
    SELECTOR GRID
    ============================================================ */
@@ -752,6 +818,17 @@ input[type="radio"].att-radio:checked + .att-label::after { background: currentC
    ============================================================ */
 .print-area { display: none; }
 
+@media (max-width: 920px) {
+  .install-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .install-card-actions {
+    min-width: 0;
+  }
+}
+
 @media print {
   body > *:not(#print-area) { display: none !important; }
   .print-area {
@@ -793,6 +870,14 @@ input[type="radio"].att-radio:checked + .att-label::after { background: currentC
   .app-main { padding: 20px 12px 80px; }
 
   .view-title { font-size: 22px; }
+
+  .install-card {
+    padding: 18px;
+  }
+
+  .install-card-title {
+    font-size: 22px;
+  }
 
   .selector-grid {
     grid-template-columns: 1fr;

@@ -1,22 +1,50 @@
 /**
- * app.js — CEM N°83 Asistencia
- * Lógica principal de la interfaz
+ * app.js - CEM N°83 Asistencia
+ * Logica principal de la interfaz
  */
 
 /* ================================================================
    UTILIDADES
    ================================================================ */
 const $ = id => document.getElementById(id);
-const q = sel => document.querySelector(sel);
 const qAll = sel => document.querySelectorAll(sel);
 
+const HTML_ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+};
+
 let toastTimer;
+let activeCursoId = null;
+let activeFecha = null;
+let activeModulo = null;
+let cursoEditandoId = null;
+let deferredPrompt = null;
+
 function showToast(msg, type = 'default') {
-  const t = $('toast');
-  t.textContent = msg;
-  t.className = `toast show ${type}`;
+  const toast = $('toast');
+  toast.textContent = msg;
+  toast.className = `toast show ${type}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.className = 'toast'; }, 3200);
+  toastTimer = setTimeout(() => {
+    toast.className = 'toast';
+  }, 3200);
+}
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => HTML_ESCAPE_MAP[char]);
+}
+
+function handleUnexpectedError(error) {
+  console.error(error);
+  showToast('Ocurrio un error inesperado', 'error');
+}
+
+function runTask(task) {
+  Promise.resolve().then(task).catch(handleUnexpectedError);
 }
 
 function formatFecha(fecha) {
@@ -26,44 +54,73 @@ function formatFecha(fecha) {
 }
 
 function fechaHoy() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const timezoneOffset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
 }
 
 function nombreCurso(curso) {
-  return `${curso.anio}${curso.division}${curso.materia ? ' — ' + curso.materia : ''}`;
+  return `${curso.anio}${curso.division}${curso.materia ? ' - ' + curso.materia : ''}`;
+}
+
+function crearOption(value, text) {
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = text;
+  return option;
+}
+
+function renderMensajeVacio(container, icono, mensaje) {
+  container.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">${icono}</div>
+      <p>${mensaje}</p>
+    </div>
+  `;
+}
+
+function setLoadingState(isLoading) {
+  document.body.classList.toggle('app-loading', isLoading);
 }
 
 /* ================================================================
-   NAVEGACIÓN
+   NAVEGACION
    ================================================================ */
-const views     = qAll('.view');
-const navBtns   = qAll('.nav-btn');
+const views = qAll('.view');
+const navBtns = qAll('.nav-btn');
 const navMobile = qAll('.nav-btn-mobile');
 
-function goTo(viewName) {
-  views.forEach(v => v.classList.remove('active'));
-  navBtns.forEach(b => b.classList.remove('active'));
-  navMobile.forEach(b => b.classList.remove('active'));
+async function goTo(viewName) {
+  views.forEach(view => view.classList.remove('active'));
+  navBtns.forEach(btn => btn.classList.remove('active'));
+  navMobile.forEach(btn => btn.classList.remove('active'));
 
   const target = $(`view-${viewName}`);
   if (target) target.classList.add('active');
 
-  navBtns.forEach(b => { if (b.dataset.view === viewName) b.classList.add('active'); });
-  navMobile.forEach(b => { if (b.dataset.view === viewName) b.classList.add('active'); });
+  navBtns.forEach(btn => {
+    if (btn.dataset.view === viewName) btn.classList.add('active');
+  });
 
-  // cerrar menú mobile
+  navMobile.forEach(btn => {
+    if (btn.dataset.view === viewName) btn.classList.add('active');
+  });
+
   $('mobileNav').classList.remove('open');
 
-  // acciones al cambiar de vista
-  if (viewName === 'cursos')   renderCursosList();
-  if (viewName === 'exportar') initExportarView();
-  if (viewName === 'historial') initHistorialView();
+  if (viewName === 'cursos') await renderCursosList();
+  if (viewName === 'historial') await initHistorialView();
+  if (viewName === 'exportar') await initExportarView();
 }
 
-navBtns.forEach(b => b.addEventListener('click', () => goTo(b.dataset.view)));
-navMobile.forEach(b => b.addEventListener('click', () => goTo(b.dataset.view)));
+navBtns.forEach(btn => {
+  btn.addEventListener('click', () => runTask(() => goTo(btn.dataset.view)));
+});
 
-// Menú hamburguesa
+navMobile.forEach(btn => {
+  btn.addEventListener('click', () => runTask(() => goTo(btn.dataset.view)));
+});
+
 $('menuToggle').addEventListener('click', () => {
   $('mobileNav').classList.toggle('open');
 });
@@ -71,95 +128,106 @@ $('menuToggle').addEventListener('click', () => {
 /* ================================================================
    VISTA: TOMAR ASISTENCIA
    ================================================================ */
-let activeCursoId   = null;
-let activeFecha     = null;
-let activeModulo    = null;
-
-// Cuando cambia el módulo → poblar selector de cursos
 $('sel-modulo').addEventListener('change', () => {
-  const mod = $('sel-modulo').value;
-  poblarSelectCurso('sel-curso', mod);
+  runTask(() => poblarSelectCurso('sel-curso', $('sel-modulo').value));
 });
 
-function poblarSelectCurso(selectId, modulo, incluyeTodos = false) {
-  const sel = $(selectId);
-  sel.innerHTML = '';
+$('btn-cargar-lista').addEventListener('click', () => {
+  runTask(cargarListaAsistencia);
+});
+
+$('btn-guardar').addEventListener('click', () => {
+  runTask(guardarAsistencia);
+});
+
+$('btn-guardar-2').addEventListener('click', () => {
+  runTask(guardarAsistencia);
+});
+
+$('btn-all-present').addEventListener('click', () => {
+  $('attendance-body').querySelectorAll('tr').forEach(tr => {
+    const radio = tr.querySelector('input[type="radio"][value="P"]');
+    if (radio) radio.checked = true;
+    setRowColor(tr, 'P');
+  });
+
+  updateStats();
+  showToast('Todos marcados como presentes');
+});
+
+async function poblarSelectCurso(selectId, modulo, incluyeTodos = false) {
+  const select = $(selectId);
+  select.innerHTML = '';
 
   if (incluyeTodos) {
-    const opt = document.createElement('option');
-    opt.value = ''; opt.textContent = 'Todos';
-    sel.appendChild(opt);
+    select.appendChild(crearOption('', 'Todos'));
   } else {
-    const opt = document.createElement('option');
-    opt.value = ''; opt.textContent = modulo ? '— Seleccionar —' : '— Primero seleccioná módulo —';
-    sel.appendChild(opt);
+    select.appendChild(
+      crearOption('', modulo ? 'Seleccionar' : 'Primero selecciona modulo')
+    );
   }
 
   if (!modulo) return;
-  const cursos = DB.getCursosByModulo(modulo);
-  cursos.forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = `${c.nombre}${c.materia ? ' — ' + c.materia : ''}`;
-    sel.appendChild(opt);
+
+  const cursos = await DB.getCursosByModulo(modulo);
+  cursos.forEach(curso => {
+    select.appendChild(
+      crearOption(curso.id, `${curso.nombre}${curso.materia ? ' - ' + curso.materia : ''}`)
+    );
   });
 }
 
-// Fecha por defecto = hoy
-$('sel-fecha').value = fechaHoy();
-
-// Cargar lista
-$('btn-cargar-lista').addEventListener('click', cargarListaAsistencia);
-
-function cargarListaAsistencia() {
-  const modulo  = $('sel-modulo').value;
+async function cargarListaAsistencia() {
+  const modulo = $('sel-modulo').value;
   const cursoId = $('sel-curso').value;
-  const fecha   = $('sel-fecha').value;
+  const fecha = $('sel-fecha').value;
 
-  if (!modulo)  return showToast('Seleccioná un módulo', 'error');
-  if (!cursoId) return showToast('Seleccioná un curso', 'error');
-  if (!fecha)   return showToast('Seleccioná la fecha', 'error');
+  if (!modulo) return showToast('Selecciona un modulo', 'error');
+  if (!cursoId) return showToast('Selecciona un curso', 'error');
+  if (!fecha) return showToast('Selecciona la fecha', 'error');
 
-  const curso = DB.getCursoById(cursoId);
+  const curso = await DB.getCursoById(cursoId);
   if (!curso) return showToast('Curso no encontrado', 'error');
-  if (!curso.estudiantes.length)
-    return showToast('Este curso no tiene estudiantes. Agregá estudiantes en Gestión de Cursos.', 'error');
+  if (!curso.estudiantes.length) {
+    return showToast('Este curso no tiene estudiantes. Agrega estudiantes en Gestion de Cursos.', 'error');
+  }
 
   activeCursoId = cursoId;
-  activeFecha   = fecha;
-  activeModulo  = modulo;
+  activeFecha = fecha;
+  activeModulo = modulo;
 
-  $('panel-titulo').textContent = `Módulo ${modulo} — ${nombreCurso(curso)}`;
-  $('panel-fecha').textContent  = `Fecha: ${formatFecha(fecha)}`;
+  $('panel-titulo').textContent = `Modulo ${modulo} - ${nombreCurso(curso)}`;
+  $('panel-fecha').textContent = `Fecha: ${formatFecha(fecha)}`;
 
-  // Verificar si ya hay asistencia guardada para ese día
-  const existente = DB.getAsistenciaExistente(cursoId, fecha);
-
+  const existente = await DB.getAsistenciaExistente(cursoId, fecha);
   renderTablaAsistencia(curso, existente);
+
   $('attendance-panel').style.display = 'block';
   $('empty-state-tomar').style.display = 'none';
   updateStats();
 
-  if (existente) showToast('ℹ️ Ya hay asistencia guardada para este día. Podés editarla.', 'default');
+  if (existente) {
+    showToast('Ya habia asistencia guardada para este dia. Puedes editarla.', 'default');
+  }
 }
 
 function renderTablaAsistencia(curso, existente) {
   const tbody = $('attendance-body');
   tbody.innerHTML = '';
 
-  curso.estudiantes.forEach((stu, i) => {
+  curso.estudiantes.forEach((stu, index) => {
     const regExistente = existente
       ? existente.registros.find(r => r.stuId === stu.id)
       : null;
+
     const estadoActual = regExistente ? regExistente.estado : 'P';
-    const obsActual    = regExistente ? regExistente.obs || '' : '';
+    const obsActual = regExistente ? regExistente.obs || '' : '';
 
     const tr = document.createElement('tr');
     tr.dataset.stuId = stu.id;
-
     tr.innerHTML = `
-      <td class="td-num">${i + 1}</td>
-      <td class="td-name">${stu.apellido}, ${stu.nombre}</td>
+      <td class="td-num">${index + 1}</td>
+      <td class="td-name">${escapeHTML(stu.apellido)}, ${escapeHTML(stu.nombre)}</td>
       <td class="td-status">
         <div class="radio-wrap">
           <input type="radio" class="att-radio" name="att-${stu.id}" value="P" id="P-${stu.id}" ${estadoActual === 'P' ? 'checked' : ''}>
@@ -178,13 +246,11 @@ function renderTablaAsistencia(curso, existente) {
           <label class="att-label" for="T-${stu.id}" title="Tarde" style="color:var(--late-fg)"></label>
         </div>
       </td>
-      <td><input type="text" class="obs-input" placeholder="Observación..." value="${obsActual}" data-stu="${stu.id}"></td>
+      <td><input type="text" class="obs-input" placeholder="Observacion..." value="${escapeHTML(obsActual)}" data-stu="${stu.id}"></td>
     `;
 
-    // Color de fila según estado
     setRowColor(tr, estadoActual);
 
-    // Cambio de estado actualiza color + stats
     tr.querySelectorAll('.att-radio').forEach(radio => {
       radio.addEventListener('change', () => {
         setRowColor(tr, radio.value);
@@ -202,155 +268,240 @@ function setRowColor(tr, estado) {
   if (estado === 'T') tr.classList.add('row-late');
 }
 
-function getRegistros() {
-  const rows = $('attendance-body').querySelectorAll('tr');
-  const registros = [];
-  const curso = DB.getCursoById(activeCursoId);
+async function getRegistros() {
+  const curso = await DB.getCursoById(activeCursoId);
+  if (!curso) return [];
 
-  rows.forEach(tr => {
-    const stuId  = tr.dataset.stuId;
-    const stu    = curso.estudiantes.find(e => e.id === stuId);
+  const registros = [];
+  $('attendance-body').querySelectorAll('tr').forEach(tr => {
+    const stuId = tr.dataset.stuId;
+    const stu = curso.estudiantes.find(estudiante => estudiante.id === stuId);
     const estado = tr.querySelector('.att-radio:checked')?.value || 'P';
-    const obs    = tr.querySelector('.obs-input')?.value || '';
+    const obs = tr.querySelector('.obs-input')?.value || '';
+
     registros.push({
       stuId,
       apellido: stu?.apellido || '',
-      nombre:   stu?.nombre || '',
+      nombre: stu?.nombre || '',
       estado,
       obs
     });
   });
+
   return registros;
 }
 
 function updateStats() {
-  const regs    = getRegistros();
-  const present = regs.filter(r => r.estado === 'P').length;
-  const absent  = regs.filter(r => r.estado === 'A').length;
-  const late    = regs.filter(r => r.estado === 'T').length;
-  $('stat-present').textContent = `Presentes: ${present}`;
-  $('stat-absent').textContent  = `Ausentes: ${absent}`;
-  $('stat-late').textContent    = `Tardanzas: ${late}`;
+  const rows = [...$('attendance-body').querySelectorAll('tr')];
+  const estados = rows.map(tr => tr.querySelector('.att-radio:checked')?.value || 'P');
+
+  $('stat-present').textContent = `Presentes: ${estados.filter(estado => estado === 'P').length}`;
+  $('stat-absent').textContent = `Ausentes: ${estados.filter(estado => estado === 'A').length}`;
+  $('stat-late').textContent = `Tardanzas: ${estados.filter(estado => estado === 'T').length}`;
 }
 
-function guardarAsistencia() {
+async function guardarAsistencia() {
   if (!activeCursoId) return;
-  const registros = getRegistros();
-  const result = DB.guardarAsistencia({
+
+  const result = await DB.guardarAsistencia({
     cursoId: activeCursoId,
     modulo: activeModulo,
     fecha: activeFecha,
-    registros
+    registros: await getRegistros()
   });
-  if (result.ok) {
-    showToast('✅ Asistencia guardada correctamente', 'success');
-  } else {
-    showToast('Error al guardar', 'error');
+
+  if (!result.ok) {
+    showToast(result.msg || 'Error al guardar', 'error');
+    return;
   }
+
+  showToast('Asistencia guardada correctamente', 'success');
 }
 
-$('btn-guardar').addEventListener('click', guardarAsistencia);
-$('btn-guardar-2').addEventListener('click', guardarAsistencia);
-
-$('btn-all-present').addEventListener('click', () => {
-  const rows = $('attendance-body').querySelectorAll('tr');
-  rows.forEach(tr => {
-    const radio = tr.querySelector(`input[type="radio"][value="P"]`);
-    if (radio) radio.checked = true;
-    setRowColor(tr, 'P');
-  });
-  updateStats();
-  showToast('Todos marcados como presentes');
+/* ================================================================
+   VISTA: GESTION DE CURSOS
+   ================================================================ */
+$('btn-crear-curso').addEventListener('click', () => {
+  runTask(crearCursoDesdeFormulario);
 });
 
-/* ================================================================
-   VISTA: GESTIÓN DE CURSOS
-   ================================================================ */
-let cursoEditandoId = null;
+$('btn-agregar-stu').addEventListener('click', () => {
+  runTask(agregarEstudianteDesdeFormulario);
+});
 
-function renderCursosList() {
+['stu-apellido', 'stu-nombre'].forEach(id => {
+  $(id).addEventListener('keydown', event => {
+    if (event.key === 'Enter') runTask(agregarEstudianteDesdeFormulario);
+  });
+});
+
+$('btn-import-txt').addEventListener('click', () => {
+  if (!cursoEditandoId) {
+    showToast('Selecciona un curso primero', 'error');
+    return;
+  }
+
+  $('import-modal').style.display = 'block';
+  $('import-textarea').focus();
+});
+
+$('btn-import-cancel').addEventListener('click', cerrarImportacion);
+
+$('btn-import-confirm').addEventListener('click', () => {
+  runTask(importarEstudiantesDesdeTexto);
+});
+
+async function crearCursoDesdeFormulario() {
+  const modulo = $('cur-modulo').value;
+  const anio = $('cur-anio').value;
+  const division = $('cur-division').value;
+  const materia = $('cur-materia').value.trim();
+
+  const result = await DB.crearCurso({ modulo, anio, division, materia });
+  if (!result.ok) return showToast(result.msg, 'error');
+
+  $('cur-materia').value = '';
+  await renderCursosList();
+  await abrirPanelEstudiantes(result.curso.id);
+  showToast(`Curso ${anio}${division} creado en Modulo ${modulo}`, 'success');
+}
+
+async function agregarEstudianteDesdeFormulario() {
+  const apellido = $('stu-apellido').value.trim();
+  const nombre = $('stu-nombre').value.trim();
+
+  if (!apellido || !nombre) return showToast('Completa apellido y nombre', 'error');
+  if (!cursoEditandoId) return showToast('Selecciona un curso primero', 'error');
+
+  const result = await DB.agregarEstudiante(cursoEditandoId, { apellido, nombre });
+  if (!result.ok) return showToast(result.msg, 'error');
+
+  $('stu-apellido').value = '';
+  $('stu-nombre').value = '';
+  $('stu-apellido').focus();
+
+  const curso = await DB.getCursoById(cursoEditandoId);
+  renderEstudiantesList(curso);
+  await renderCursosList();
+  showToast(`${apellido}, ${nombre} agregado/a`, 'success');
+}
+
+async function importarEstudiantesDesdeTexto() {
+  const text = $('import-textarea').value.trim();
+  if (!text) return showToast('La lista esta vacia', 'error');
+  if (!cursoEditandoId) return showToast('Selecciona un curso primero', 'error');
+
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  let count = 0;
+
+  for (const line of lines) {
+    let apellido = '';
+    let nombre = '';
+
+    if (line.includes(',')) {
+      [apellido, nombre] = line.split(',').map(part => part.trim());
+    } else {
+      const parts = line.split(/\s+/);
+      apellido = parts[0] || '';
+      nombre = parts.slice(1).join(' ') || '';
+    }
+
+    if (!apellido || !nombre) continue;
+
+    const result = await DB.agregarEstudiante(cursoEditandoId, { apellido, nombre });
+    if (!result.ok && result.msg.includes('almacenamiento')) {
+      return showToast(result.msg, 'error');
+    }
+
+    if (result.ok) count++;
+  }
+
+  cerrarImportacion();
+  const curso = await DB.getCursoById(cursoEditandoId);
+  renderEstudiantesList(curso);
+  await renderCursosList();
+  showToast(`${count} estudiante(s) importado(s)`, 'success');
+}
+
+function cerrarImportacion() {
+  $('import-modal').style.display = 'none';
+  $('import-textarea').value = '';
+}
+
+async function renderCursosList() {
   const container = $('cursos-list');
-  const cursos = DB.getCursos().sort((a, b) => a.modulo - b.modulo || a.nombre.localeCompare(b.nombre));
+  const cursos = (await DB.getCursos())
+    .sort((a, b) => a.modulo - b.modulo || a.nombre.localeCompare(b.nombre));
 
   if (!cursos.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);font-size:14px;padding:8px 0">Aún no hay cursos creados.</p>';
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:14px;padding:8px 0">Aun no hay cursos creados.</p>';
     return;
   }
 
   container.innerHTML = '';
   const porModulo = {};
-  cursos.forEach(c => {
-    if (!porModulo[c.modulo]) porModulo[c.modulo] = [];
-    porModulo[c.modulo].push(c);
+
+  cursos.forEach(curso => {
+    if (!porModulo[curso.modulo]) porModulo[curso.modulo] = [];
+    porModulo[curso.modulo].push(curso);
   });
 
-  Object.entries(porModulo).forEach(([mod, arr]) => {
+  Object.entries(porModulo).forEach(([modulo, lista]) => {
     const label = document.createElement('p');
     label.style.cssText = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin:14px 0 6px';
-    label.textContent = `Módulo ${mod}`;
+    label.textContent = `Modulo ${modulo}`;
     container.appendChild(label);
 
-    arr.forEach(curso => {
+    lista.forEach(curso => {
       const div = document.createElement('div');
       div.className = 'curso-item';
       div.innerHTML = `
         <div class="curso-badge">M${curso.modulo}</div>
         <div class="curso-info">
-          <div class="curso-name">${curso.nombre}${curso.materia ? ' — ' + curso.materia : ''}</div>
+          <div class="curso-name">${escapeHTML(curso.nombre)}${curso.materia ? ' - ' + escapeHTML(curso.materia) : ''}</div>
           <div class="curso-meta">${curso.estudiantes.length} estudiante${curso.estudiantes.length !== 1 ? 's' : ''}</div>
         </div>
         <div class="curso-actions">
-          <button class="btn-add-stu" data-id="${curso.id}">👤 Estudiantes</button>
-          <button class="btn-danger" data-del="${curso.id}" title="Eliminar curso">✕</button>
+          <button class="btn-add-stu" data-id="${curso.id}">Estudiantes</button>
+          <button class="btn-danger" data-del="${curso.id}" title="Eliminar curso">X</button>
         </div>
       `;
       container.appendChild(div);
     });
   });
 
-  // Events
   container.querySelectorAll('.btn-add-stu').forEach(btn => {
-    btn.addEventListener('click', () => abrirPanelEstudiantes(btn.dataset.id));
+    btn.addEventListener('click', () => runTask(() => abrirPanelEstudiantes(btn.dataset.id)));
   });
+
   container.querySelectorAll('[data-del]').forEach(btn => {
-    btn.addEventListener('click', () => confirmarEliminarCurso(btn.dataset.del));
+    btn.addEventListener('click', () => runTask(() => confirmarEliminarCurso(btn.dataset.del)));
   });
 }
 
-function confirmarEliminarCurso(id) {
-  const curso = DB.getCursoById(id);
+async function confirmarEliminarCurso(id) {
+  const curso = await DB.getCursoById(id);
   if (!curso) return;
-  if (!confirm(`¿Eliminar el curso ${curso.nombre}? Esto eliminará TODAS sus asistencias guardadas.`)) return;
-  DB.eliminarCurso(id);
-  renderCursosList();
-  showToast('Curso eliminado');
+  if (!confirm(`Eliminar el curso ${curso.nombre}? Esto eliminara todas sus asistencias guardadas.`)) return;
+
+  const result = await DB.eliminarCurso(id);
+  if (!result.ok) return showToast(result.msg, 'error');
+
   if (cursoEditandoId === id) {
     cursoEditandoId = null;
     $('card-estudiantes').style.display = 'none';
   }
+
+  await renderCursosList();
+  showToast('Curso eliminado');
 }
 
-$('btn-crear-curso').addEventListener('click', () => {
-  const modulo   = $('cur-modulo').value;
-  const anio     = $('cur-anio').value;
-  const division = $('cur-division').value;
-  const materia  = $('cur-materia').value.trim();
-
-  const result = DB.crearCurso({ modulo, anio, division, materia });
-  if (!result.ok) return showToast(result.msg, 'error');
-
-  showToast(`✅ Curso ${anio}${division} creado en Módulo ${modulo}`, 'success');
-  renderCursosList();
-  $('cur-materia').value = '';
-  abrirPanelEstudiantes(result.curso.id);
-});
-
-/* ---- PANEL ESTUDIANTES ---- */
-function abrirPanelEstudiantes(cursoId) {
+async function abrirPanelEstudiantes(cursoId) {
   cursoEditandoId = cursoId;
-  const curso = DB.getCursoById(cursoId);
+  const curso = await DB.getCursoById(cursoId);
   if (!curso) return;
-  $('cur-selected-name').textContent = `${nombreCurso(curso)} (Módulo ${curso.modulo})`;
+
+  $('cur-selected-name').textContent = `${nombreCurso(curso)} (Modulo ${curso.modulo})`;
   $('card-estudiantes').style.display = 'block';
   $('card-estudiantes').scrollIntoView({ behavior: 'smooth', block: 'start' });
   renderEstudiantesList(curso);
@@ -358,190 +509,122 @@ function abrirPanelEstudiantes(cursoId) {
 
 function renderEstudiantesList(curso) {
   const container = $('stu-list-container');
-  if (!curso.estudiantes.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:8px 0">Sin estudiantes. Agregá el primero.</p>';
+
+  if (!curso || !curso.estudiantes.length) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:8px 0">Sin estudiantes. Agrega el primero.</p>';
     return;
   }
+
   container.innerHTML = '';
-  curso.estudiantes.forEach((stu, i) => {
+
+  curso.estudiantes.forEach((stu, index) => {
     const div = document.createElement('div');
     div.className = 'stu-item';
     div.innerHTML = `
-      <span class="stu-num">${i + 1}</span>
-      <span class="stu-name">${stu.apellido}, ${stu.nombre}</span>
-      <button class="btn-danger" data-del="${stu.id}" title="Eliminar">✕</button>
+      <span class="stu-num">${index + 1}</span>
+      <span class="stu-name">${escapeHTML(stu.apellido)}, ${escapeHTML(stu.nombre)}</span>
+      <button class="btn-danger" data-del="${stu.id}" title="Eliminar">X</button>
     `;
     container.appendChild(div);
   });
+
   container.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!confirm('¿Eliminar este estudiante?')) return;
-      DB.eliminarEstudiante(cursoEditandoId, btn.dataset.del);
-      const c = DB.getCursoById(cursoEditandoId);
-      renderEstudiantesList(c);
-      renderCursosList();
-      showToast('Estudiante eliminado');
+      runTask(async () => {
+        if (!confirm('Eliminar este estudiante?')) return;
+
+        const result = await DB.eliminarEstudiante(cursoEditandoId, btn.dataset.del);
+        if (!result.ok) return showToast(result.msg, 'error');
+
+        const cursoActualizado = await DB.getCursoById(cursoEditandoId);
+        renderEstudiantesList(cursoActualizado);
+        await renderCursosList();
+        showToast('Estudiante eliminado');
+      });
     });
   });
 }
-
-$('btn-agregar-stu').addEventListener('click', () => {
-  const apellido = $('stu-apellido').value.trim();
-  const nombre   = $('stu-nombre').value.trim();
-  if (!apellido || !nombre) return showToast('Completá apellido y nombre', 'error');
-  if (!cursoEditandoId)     return showToast('Seleccioná un curso primero', 'error');
-
-  const result = DB.agregarEstudiante(cursoEditandoId, { apellido, nombre });
-  if (!result.ok) return showToast(result.msg, 'error');
-
-  $('stu-apellido').value = '';
-  $('stu-nombre').value   = '';
-  $('stu-apellido').focus();
-  const c = DB.getCursoById(cursoEditandoId);
-  renderEstudiantesList(c);
-  renderCursosList();
-  showToast(`✅ ${apellido}, ${nombre} agregado/a`, 'success');
-});
-
-// Enter en campos de estudiante
-['stu-apellido', 'stu-nombre'].forEach(id => {
-  $(id).addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('btn-agregar-stu').click();
-  });
-});
-
-/* ---- IMPORTAR DESDE TEXTO ---- */
-$('btn-import-txt').addEventListener('click', () => {
-  $('import-modal').style.display = 'block';
-  $('import-textarea').focus();
-});
-
-$('btn-import-cancel').addEventListener('click', () => {
-  $('import-modal').style.display = 'none';
-  $('import-textarea').value = '';
-});
-
-$('btn-import-confirm').addEventListener('click', () => {
-  const text = $('import-textarea').value.trim();
-  if (!text) return showToast('La lista está vacía', 'error');
-  if (!cursoEditandoId) return showToast('Seleccioná un curso primero', 'error');
-
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  let count = 0;
-  lines.forEach(line => {
-    let apellido = '', nombre = '';
-    if (line.includes(',')) {
-      [apellido, nombre] = line.split(',').map(s => s.trim());
-    } else {
-      const parts = line.split(/\s+/);
-      apellido = parts[0] || '';
-      nombre   = parts.slice(1).join(' ') || '';
-    }
-    if (apellido && nombre) {
-      const r = DB.agregarEstudiante(cursoEditandoId, { apellido, nombre });
-      if (r.ok) count++;
-    }
-  });
-
-  $('import-modal').style.display = 'none';
-  $('import-textarea').value = '';
-  const c = DB.getCursoById(cursoEditandoId);
-  renderEstudiantesList(c);
-  renderCursosList();
-  showToast(`✅ ${count} estudiante${count !== 1 ? 's' : ''} importado${count !== 1 ? 's' : ''}`, 'success');
-});
 
 /* ================================================================
    VISTA: HISTORIAL
    ================================================================ */
-function initHistorialView() {
-  poblarSelectCurso('his-curso', '', true);
-  poblarAllCursos('his-curso');
-}
-
-function poblarAllCursos(selectId) {
-  const sel = $(selectId);
-  sel.innerHTML = '<option value="">Todos</option>';
-  DB.getCursos()
-    .sort((a, b) => a.modulo - b.modulo || a.nombre.localeCompare(b.nombre))
-    .forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = `M${c.modulo} — ${c.nombre}${c.materia ? ' — ' + c.materia : ''}`;
-      sel.appendChild(opt);
-    });
-}
-
 $('his-modulo').addEventListener('change', () => {
-  const mod = $('his-modulo').value;
-  if (mod) {
-    poblarSelectCurso('his-curso', mod, true);
-  } else {
-    poblarAllCursos('his-curso');
-  }
+  runTask(async () => {
+    const modulo = $('his-modulo').value;
+    if (modulo) await poblarSelectCurso('his-curso', modulo, true);
+    else await poblarAllCursos('his-curso');
+  });
 });
 
 $('btn-filtrar-his').addEventListener('click', () => {
-  const modulo  = $('his-modulo').value;
-  const cursoId = $('his-curso').value;
-  const desde   = $('his-desde').value;
-  const hasta   = $('his-hasta').value;
-
-  const asistencias = DB.getAsistenciasByFilter({ modulo, cursoId, desde, hasta });
-  renderHistorial(asistencias);
+  runTask(filtrarHistorial);
 });
+
+async function initHistorialView() {
+  if ($('his-modulo').value) await poblarSelectCurso('his-curso', $('his-modulo').value, true);
+  else await poblarAllCursos('his-curso');
+}
+
+async function poblarAllCursos(selectId) {
+  const select = $(selectId);
+  select.innerHTML = '';
+  select.appendChild(crearOption('', 'Todos'));
+
+  const cursos = (await DB.getCursos())
+    .sort((a, b) => a.modulo - b.modulo || a.nombre.localeCompare(b.nombre));
+
+  cursos.forEach(curso => {
+    select.appendChild(
+      crearOption(curso.id, `M${curso.modulo} - ${curso.nombre}${curso.materia ? ' - ' + curso.materia : ''}`)
+    );
+  });
+}
+
+async function filtrarHistorial() {
+  const filtros = {
+    modulo: $('his-modulo').value,
+    cursoId: $('his-curso').value,
+    desde: $('his-desde').value,
+    hasta: $('his-hasta').value
+  };
+
+  if (filtros.desde && filtros.hasta && filtros.desde > filtros.hasta) {
+    showToast('La fecha Desde no puede ser mayor que Hasta', 'error');
+    return;
+  }
+
+  const asistencias = await DB.getAsistenciasByFilter(filtros);
+  await hydrateHistorialWithCourseNames(asistencias);
+  renderHistorial(asistencias);
+}
 
 function renderHistorial(asistencias) {
   const container = $('historial-resultados');
   if (!asistencias.length) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">📅</div>
-        <p>No se encontraron registros con los filtros aplicados.</p>
-      </div>`;
+    renderMensajeVacio(container, '📅', 'No se encontraron registros con los filtros aplicados.');
     return;
   }
 
   container.innerHTML = '';
-  asistencias.forEach(a => {
-    const curso   = DB.getCursoById(a.cursoId);
-    const present = a.registros.filter(r => r.estado === 'P').length;
-    const absent  = a.registros.filter(r => r.estado === 'A').length;
-    const late    = a.registros.filter(r => r.estado === 'T').length;
-    const ausentes = a.registros.filter(r => r.estado === 'A');
-    const tardes   = a.registros.filter(r => r.estado === 'T');
 
+  asistencias.forEach(asistencia => {
     const div = document.createElement('div');
     div.className = 'his-entry';
     div.innerHTML = `
       <div class="his-header">
         <div>
-          <div class="his-title">Módulo ${a.modulo} — ${curso ? nombreCurso(curso) : a.cursoId}</div>
-          <div class="his-date">${formatFecha(a.fecha)}</div>
+          <div class="his-title">Modulo ${asistencia.modulo} - ${escapeHTML(asistencia.cursoNombre || asistencia.cursoId)}</div>
+          <div class="his-date">${formatFecha(asistencia.fecha)}</div>
         </div>
         <div class="his-stats">
-          <span class="his-stat p">✅ ${present}</span>
-          <span class="his-stat a">❌ ${absent}</span>
-          <span class="his-stat t">⏰ ${late}</span>
+          <span class="his-stat p">P ${asistencia.registros.filter(r => r.estado === 'P').length}</span>
+          <span class="his-stat a">A ${asistencia.registros.filter(r => r.estado === 'A').length}</span>
+          <span class="his-stat t">T ${asistencia.registros.filter(r => r.estado === 'T').length}</span>
         </div>
       </div>
-      <div class="his-detail">
-        ${ausentes.length ? `
-          <p style="font-size:12px;font-weight:700;color:var(--absent-fg);margin-bottom:6px">Ausentes:</p>
-          <div class="his-list">
-            ${ausentes.map(r => `<span class="his-stu a">${r.apellido}, ${r.nombre}${r.obs ? ' (' + r.obs + ')' : ''}</span>`).join('')}
-          </div>
-        ` : ''}
-        ${tardes.length ? `
-          <p style="font-size:12px;font-weight:700;color:var(--late-fg);margin:10px 0 6px">Tardanzas:</p>
-          <div class="his-list">
-            ${tardes.map(r => `<span class="his-stu t">${r.apellido}, ${r.nombre}${r.obs ? ' (' + r.obs + ')' : ''}</span>`).join('')}
-          </div>
-        ` : ''}
-        ${!ausentes.length && !tardes.length ? '<p style="font-size:13px;color:var(--text-muted)">Todos presentes ✅</p>' : ''}
-      </div>
+      <div class="his-detail">${buildHistorialDetalle(asistencia)}</div>
       <div class="his-entry-actions">
-        <button class="btn-danger" data-del-asis="${a.id}">🗑 Eliminar registro</button>
+        <button class="btn-danger" data-del-asis="${asistencia.id}">Eliminar registro</button>
       </div>
     `;
     container.appendChild(div);
@@ -549,35 +632,75 @@ function renderHistorial(asistencias) {
 
   container.querySelectorAll('[data-del-asis]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!confirm('¿Eliminar este registro de asistencia?')) return;
-      DB.eliminarAsistencia(btn.dataset.delAsis);
-      $('btn-filtrar-his').click();
-      showToast('Registro eliminado');
+      runTask(async () => {
+        if (!confirm('Eliminar este registro de asistencia?')) return;
+
+        const result = await DB.eliminarAsistencia(btn.dataset.delAsis);
+        if (!result.ok) return showToast(result.msg, 'error');
+
+        await filtrarHistorial();
+        showToast('Registro eliminado');
+      });
     });
   });
+}
+
+function buildHistorialDetalle(asistencia) {
+  const ausentes = asistencia.registros.filter(r => r.estado === 'A');
+  const tardes = asistencia.registros.filter(r => r.estado === 'T');
+
+  if (!ausentes.length && !tardes.length) {
+    return '<p style="font-size:13px;color:var(--text-muted)">Todos presentes</p>';
+  }
+
+  const partes = [];
+
+  if (ausentes.length) {
+    partes.push(`
+      <p style="font-size:12px;font-weight:700;color:var(--absent-fg);margin-bottom:6px">Ausentes:</p>
+      <div class="his-list">
+        ${ausentes.map(r => `<span class="his-stu a">${escapeHTML(r.apellido)}, ${escapeHTML(r.nombre)}${r.obs ? ` (${escapeHTML(r.obs)})` : ''}</span>`).join('')}
+      </div>
+    `);
+  }
+
+  if (tardes.length) {
+    partes.push(`
+      <p style="font-size:12px;font-weight:700;color:var(--late-fg);margin:10px 0 6px">Tardanzas:</p>
+      <div class="his-list">
+        ${tardes.map(r => `<span class="his-stu t">${escapeHTML(r.apellido)}, ${escapeHTML(r.nombre)}${r.obs ? ` (${escapeHTML(r.obs)})` : ''}</span>`).join('')}
+      </div>
+    `);
+  }
+
+  return partes.join('');
 }
 
 /* ================================================================
    VISTA: EXPORTAR
    ================================================================ */
-function initExportarView() {
-  poblarAllCursos('exp-curso');
-  renderResumenGeneral();
-}
-
 $('exp-modulo').addEventListener('change', () => {
-  const mod = $('exp-modulo').value;
-  if (mod) poblarSelectCurso('exp-curso', mod, true);
-  else poblarAllCursos('exp-curso');
+  runTask(async () => {
+    const modulo = $('exp-modulo').value;
+    if (modulo) await poblarSelectCurso('exp-curso', modulo, true);
+    else await poblarAllCursos('exp-curso');
+  });
 });
 
-function renderResumenGeneral() {
-  const cursos = DB.getCursos();
-  const total  = DB.getAsistencias().length;
+async function initExportarView() {
+  if ($('exp-modulo').value) await poblarSelectCurso('exp-curso', $('exp-modulo').value, true);
+  else await poblarAllCursos('exp-curso');
+
+  await renderResumenGeneral();
+}
+
+async function renderResumenGeneral() {
+  const cursos = await DB.getCursos();
+  const total = (await DB.getAsistencias()).length;
   const container = $('resumen-general');
 
   if (!cursos.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);font-size:14px">No hay datos cargados aún.</p>';
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:14px">No hay datos cargados aun.</p>';
     return;
   }
 
@@ -586,10 +709,10 @@ function renderResumenGeneral() {
     <table class="resumen-table">
       <thead>
         <tr>
-          <th>Módulo</th>
+          <th>Modulo</th>
           <th>Curso</th>
           <th>Estudiantes</th>
-          <th>Días registrados</th>
+          <th>Dias registrados</th>
         </tr>
       </thead>
       <tbody>
@@ -597,87 +720,185 @@ function renderResumenGeneral() {
 
   cursos
     .sort((a, b) => a.modulo - b.modulo || a.nombre.localeCompare(b.nombre))
-    .forEach(c => {
-      const dias = DB.getAsistenciasByFilter({ cursoId: c.id }).length;
+    .forEach(curso => {
       html += `
         <tr>
-          <td>Módulo ${c.modulo}</td>
-          <td>${c.nombre}${c.materia ? ' — ' + c.materia : ''}</td>
-          <td>${c.estudiantes.length}</td>
-          <td>${dias}</td>
+          <td>Modulo ${curso.modulo}</td>
+          <td>${escapeHTML(curso.nombre)}${curso.materia ? ' - ' + escapeHTML(curso.materia) : ''}</td>
+          <td>${curso.estudiantes.length}</td>
+          <td data-curso-dias="${curso.id}">...</td>
         </tr>
       `;
     });
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  await Promise.all(cursos.map(async curso => {
+    const dias = (await DB.getAsistenciasByFilter({ cursoId: curso.id })).length;
+    const cell = container.querySelector(`[data-curso-dias="${curso.id}"]`);
+    if (cell) cell.textContent = String(dias);
+  }));
 }
 
 /* ================================================================
    PWA INSTALL PROMPT
    ================================================================ */
-let deferredPrompt;
 const PWA_HIDE_KEY = 'cem83_pwa_hide_until';
-const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 horas
+const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredPrompt = e;
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredPrompt = event;
 
-  const hideUntil = localStorage.getItem(PWA_HIDE_KEY);
-  const now = Date.now();
-
-  if (!hideUntil || now > parseInt(hideUntil, 10)) {
-    showInstallBanner();
-  }
+  refreshInstallCard();
 });
 
-function showInstallBanner() {
-  if ($('pwa-install-banner')) return;
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  hideInstallCard(true);
+});
 
-  const banner = document.createElement('div');
-  banner.id = 'pwa-install-banner';
-  banner.style.cssText = `
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: #15803d; color: white; padding: 16px;
-    display: flex; justify-content: space-between; align-items: center;
-    z-index: 10000; box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
-    font-family: inherit; border-top-left-radius: 12px; border-top-right-radius: 12px;
-    animation: slideUpPWA 0.4s ease-out;
-  `;
+window.addEventListener('focus', () => {
+  refreshInstallCard();
+});
 
-  banner.innerHTML = `
-    <div style="display:flex; align-items:center; gap:12px">
-      <span style="font-size:24px">📲</span>
-      <div>
-        <div style="font-weight:700; font-size:15px">Instalar CEM 83</div>
-        <div style="font-size:12px; opacity:0.9">Accedé más rápido y sin internet.</div>
-      </div>
-    </div>
-    <div style="display:flex; align-items:center; gap:12px">
-      <button id="pwa-install-btn" style="background:white; color:#15803d; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer; font-size:14px">Instalar</button>
-      <button id="pwa-close-btn" style="background:transparent; color:white; border:none; font-size:20px; cursor:pointer; padding:4px">✕</button>
-    </div>
-    <style>
-      @keyframes slideUpPWA { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    </style>
-  `;
-
-  document.body.appendChild(banner);
-
-  $('pwa-install-btn').addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') banner.remove();
-    deferredPrompt = null;
-  });
-
-  $('pwa-close-btn').addEventListener('click', () => {
-    localStorage.setItem(PWA_HIDE_KEY, (Date.now() + COOLDOWN_MS).toString());
-    banner.remove();
-  });
+function isStandaloneMode() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
-/* INIT */
-goTo('tomar');
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+}
+
+function canShowInstallCard() {
+  if (isStandaloneMode()) return false;
+
+  const hideUntil = parseInt(localStorage.getItem(PWA_HIDE_KEY) || '0', 10);
+  return !hideUntil || Date.now() > hideUntil;
+}
+
+function getInstallCardState() {
+  if (deferredPrompt) {
+    return {
+      title: 'Instalar CEM 83',
+      text: 'Instala la aplicacion en este dispositivo para abrirla como una app, entrar mas rapido y trabajar sin internet.',
+      hint: 'Disponible para celulares, tablets y PC compatibles.',
+      actionLabel: 'Instalar app',
+      mode: 'prompt'
+    };
+  }
+
+  if (isIOSDevice()) {
+    return {
+      title: 'Agregar a pantalla de inicio',
+      text: 'En iPhone o iPad puedes usar esta app como acceso directo instalable desde Safari.',
+      hint: 'Abre Compartir y luego toca "Agregar a pantalla de inicio".',
+      actionLabel: 'Ver pasos',
+      mode: 'ios-help'
+    };
+  }
+
+  return {
+    title: 'Instalar en este equipo',
+    text: 'Si tu navegador lo permite, puedes fijar CEM 83 como aplicacion desde el menu del navegador.',
+    hint: 'Busca opciones como "Instalar aplicacion", "Instalar app" o "Crear acceso directo".',
+    actionLabel: 'Ver ayuda',
+    mode: 'manual-help'
+  };
+}
+
+function hideInstallCard(persist = false) {
+  const card = $('install-card');
+  if (!card) return;
+
+  if (persist) {
+    localStorage.setItem(PWA_HIDE_KEY, String(Date.now() + COOLDOWN_MS));
+  }
+
+  card.hidden = true;
+}
+
+function refreshInstallCard() {
+  const card = $('install-card');
+  if (!card) return;
+
+  if (!canShowInstallCard()) {
+    card.hidden = true;
+    return;
+  }
+
+  const state = getInstallCardState();
+  $('install-card-title').textContent = state.title;
+  $('install-card-text').textContent = state.text;
+  $('install-card-hint').textContent = state.hint;
+  $('install-card-action').textContent = state.actionLabel;
+  $('install-card-action').dataset.mode = state.mode;
+  card.hidden = false;
+}
+
+async function onInstallCardAction() {
+  const mode = $('install-card-action').dataset.mode;
+
+  if (mode === 'prompt' && deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+
+    if (outcome === 'accepted') {
+      hideInstallCard(true);
+      showToast('La instalacion fue iniciada en este dispositivo', 'success');
+      return;
+    }
+
+    refreshInstallCard();
+    return;
+  }
+
+  if (mode === 'ios-help') {
+    showToast('En Safari: Compartir > Agregar a pantalla de inicio', 'default');
+    return;
+  }
+
+  showToast('Abre el menu del navegador y busca la opcion para instalar la aplicacion', 'default');
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+async function hydrateHistorialWithCourseNames(asistencias) {
+  const cache = new Map();
+
+  await Promise.all(asistencias.map(async asistencia => {
+    if (!cache.has(asistencia.cursoId)) {
+      cache.set(asistencia.cursoId, await DB.getCursoById(asistencia.cursoId));
+    }
+
+    const curso = cache.get(asistencia.cursoId);
+    asistencia.cursoNombre = curso ? nombreCurso(curso) : asistencia.cursoId;
+  }));
+}
+
+async function initApp() {
+  setLoadingState(true);
+  $('sel-fecha').value = fechaHoy();
+
+  try {
+    await DB.ready();
+    $('install-card-action').addEventListener('click', () => {
+      runTask(onInstallCardAction);
+    });
+    $('install-card-close').addEventListener('click', () => {
+      hideInstallCard(true);
+    });
+    refreshInstallCard();
+    await goTo('tomar');
+  } catch (error) {
+    console.error(error);
+    showToast('No se pudo inicializar la base de datos local', 'error');
+  } finally {
+    setLoadingState(false);
+  }
+}
+
+runTask(initApp);
