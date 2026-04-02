@@ -621,18 +621,14 @@ const PWA_HIDE_KEY = 'cem83_pwa_hide_until';
 const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 horas
 
 window.addEventListener('beforeinstallprompt', e => {
-  console.log('PWA: Evento beforeinstallprompt detectado ✅');
   e.preventDefault();
   deferredPrompt = e;
 
-  // Verificar si el usuario cerró el banner recientemente
   const hideUntil = localStorage.getItem(PWA_HIDE_KEY);
   const now = Date.now();
 
   if (!hideUntil || now > parseInt(hideUntil, 10)) {
     showInstallBanner();
-  } else {
-    console.log('PWA: Banner en periodo de espera (cooldown)');
   }
 });
 
@@ -669,7 +665,6 @@ function showInstallBanner() {
 
   document.body.appendChild(banner);
 
-  // Lógica de instalación
   $('pwa-install-btn').addEventListener('click', async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
@@ -678,21 +673,11 @@ function showInstallBanner() {
     deferredPrompt = null;
   });
 
-  // Lógica de cierre con persistencia de 12 horas
   $('pwa-close-btn').addEventListener('click', () => {
     localStorage.setItem(PWA_HIDE_KEY, (Date.now() + COOLDOWN_MS).toString());
     banner.remove();
   });
 }
 
-window.addEventListener('appinstalled', () => {
-  const banner = $('pwa-install-banner');
-  if (banner) banner.remove();
-  showToast('✅ App instalada correctamente', 'success');
-  deferredPrompt = null;
-});
-
-/* ================================================================
-   INIT
-   ================================================================ */
+/* INIT */
 goTo('tomar');
