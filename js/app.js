@@ -784,28 +784,22 @@ function getInstallCardState() {
       title: 'Instalar CEM 83',
       text: 'Instala la aplicacion en este dispositivo para abrirla como una app, entrar mas rapido y trabajar sin internet.',
       hint: 'Disponible para celulares, tablets y PC compatibles.',
-      actionLabel: 'Instalar app',
+      actionLabel: 'Instalar App',
       mode: 'prompt'
     };
   }
 
   if (isIOSDevice()) {
     return {
-      title: 'Agregar a pantalla de inicio',
-      text: 'En iPhone o iPad puedes usar esta app como acceso directo instalable desde Safari.',
+      title: 'Instalar CEM 83',
+      text: 'Instala la app desde Safari para usarla como aplicacion y abrirla directo desde tu pantalla.',
       hint: 'Abre Compartir y luego toca "Agregar a pantalla de inicio".',
-      actionLabel: 'Ver pasos',
+      actionLabel: 'Instalar App',
       mode: 'ios-help'
     };
   }
 
-  return {
-    title: 'Instalar en este equipo',
-    text: 'Si tu navegador lo permite, puedes fijar CEM 83 como aplicacion desde el menu del navegador.',
-    hint: 'Busca opciones como "Instalar aplicacion", "Instalar app" o "Crear acceso directo".',
-    actionLabel: 'Ver ayuda',
-    mode: 'manual-help'
-  };
+  return null;
 }
 
 function hideInstallCard(persist = false) {
@@ -829,6 +823,11 @@ function refreshInstallCard() {
   }
 
   const state = getInstallCardState();
+  if (!state) {
+    card.hidden = true;
+    return;
+  }
+
   $('install-card-title').textContent = state.title;
   $('install-card-text').textContent = state.text;
   $('install-card-hint').textContent = state.hint;
@@ -859,8 +858,6 @@ async function onInstallCardAction() {
     showToast('En Safari: Compartir > Agregar a pantalla de inicio', 'default');
     return;
   }
-
-  showToast('Abre el menu del navegador y busca la opcion para instalar la aplicacion', 'default');
 }
 
 /* ================================================================
