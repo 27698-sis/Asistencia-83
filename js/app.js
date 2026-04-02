@@ -621,6 +621,7 @@ const PWA_HIDE_KEY = 'cem83_pwa_hide_until';
 const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 horas
 
 window.addEventListener('beforeinstallprompt', e => {
+  console.log('PWA: Evento beforeinstallprompt detectado ✅');
   e.preventDefault();
   deferredPrompt = e;
 
@@ -628,8 +629,10 @@ window.addEventListener('beforeinstallprompt', e => {
   const hideUntil = localStorage.getItem(PWA_HIDE_KEY);
   const now = Date.now();
 
-  if (!hideUntil || now > parseInt(hideUntil)) {
+  if (!hideUntil || now > parseInt(hideUntil, 10)) {
     showInstallBanner();
+  } else {
+    console.log('PWA: Banner en periodo de espera (cooldown)');
   }
 });
 
