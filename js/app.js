@@ -617,13 +617,74 @@ function renderResumenGeneral() {
    PWA INSTALL PROMPT
    ================================================================ */
 let deferredPrompt;
+const PWA_HIDE_KEY = 'cem83_pwa_hide_until';
+const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 horas
+
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
-  showToast('📲 ¡Podés instalar esta app! Buscá "Instalar" en el menú de tu navegador.');
+
+  // Verificar si el usuario cerró el banner recientemente
+  const hideUntil = localStorage.getItem(PWA_HIDE_KEY);
+  const now = Date.now();
+
+  if (!hideUntil || now > parseInt(hideUntil)) {
+    showInstallBanner();
+  }
 });
 
+function showInstallBanner() {
+  if ($('pwa-install-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'pwa-install-banner';
+  banner.style.cssText = `
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #15803d; color: white; padding: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10000; box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+    font-family: inherit; border-top-left-radius: 12px; border-top-right-radius: 12px;
+    animation: slideUpPWA 0.4s ease-out;
+  `;
+
+  banner.innerHTML = `
+    <div style="display:flex; align-items:center; gap:12px">
+      <span style="font-size:24px">📲</span>
+      <div>
+        <div style="font-weight:700; font-size:15px">Instalar CEM 83</div>
+        <div style="font-size:12px; opacity:0.9">Accedé más rápido y sin internet.</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px">
+      <button id="pwa-install-btn" style="background:white; color:#15803d; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer; font-size:14px">Instalar</button>
+      <button id="pwa-close-btn" style="background:transparent; color:white; border:none; font-size:20px; cursor:pointer; padding:4px">✕</button>
+    </div>
+    <style>
+      @keyframes slideUpPWA { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    </style>
+  `;
+
+  document.body.appendChild(banner);
+
+  // Lógica de instalación
+  $('pwa-install-btn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') banner.remove();
+    deferredPrompt = null;
+  });
+
+  // Lógica de cierre con persistencia de 12 horas
+  $('pwa-close-btn').addEventListener('click', () => {
+    localStorage.setItem(PWA_HIDE_KEY, (Date.now() + COOLDOWN_MS).toString());
+    banner.remove();
+  });
+}
+
 window.addEventListener('appinstalled', () => {
+  const banner = $('pwa-install-banner');
+  if (banner) banner.remove();
   showToast('✅ App instalada correctamente', 'success');
   deferredPrompt = null;
 });
